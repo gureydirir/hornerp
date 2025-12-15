@@ -1,5 +1,5 @@
 flet
 openpyxl
 psycopg2-binary
-requests
-pdf
+reportlab
+scikit-learn
