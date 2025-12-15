@@ -3,8 +3,11 @@ import os
 import shutil
 import datetime
 import random # For chart mock data if db is empty
-# from pdf_report import generate_business_report, generate_barcode_sheet -> Moved down
-import receipt_printer
+try:
+    import receipt_printer
+except ImportError:
+    receipt_printer = None
+    print("Receipt Printer module missing or failed to load.")
 from db_connector import DBHandler, get_pak_time
 
 # New Import
@@ -1624,7 +1627,7 @@ class HornERP:
 
             def load_clients():
                 clients_table.rows.clear()
-                conn = sqlite3.connect("horn.db", timeout=30)
+                conn = DBHandler.get_connection()
                 cursor = conn.cursor()
                 cursor.execute("SELECT * FROM customers ORDER BY id DESC")
                 rows = cursor.fetchall()
@@ -1648,7 +1651,7 @@ class HornERP:
                     self.show_snack("Please fill name and phone", "red")
                     return
                 try:
-                    conn = sqlite3.connect("horn.db", timeout=30)
+                    conn = DBHandler.get_connection()
                     cursor = conn.cursor()
                     cursor.execute("INSERT INTO customers (name, phone, points) VALUES (?, ?, 0)", (name_tf.value, phone_tf.value))
                     conn.commit()
