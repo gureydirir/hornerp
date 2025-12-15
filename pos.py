@@ -3,7 +3,7 @@ import os
 import shutil
 import datetime
 import random # For chart mock data if db is empty
-from pdf_report import generate_business_report, generate_barcode_sheet
+# from pdf_report import generate_business_report, generate_barcode_sheet -> Moved down
 import receipt_printer
 from db_connector import DBHandler, get_pak_time
 
@@ -12,6 +12,13 @@ try:
     from excel_exporter import export_to_excel
 except ImportError:
     export_to_excel = None
+
+try:
+    from pdf_report import generate_business_report, generate_barcode_sheet
+except ImportError:
+    print("PDF Report module missing or failed to load.")
+    generate_business_report = None
+    generate_barcode_sheet = None
 
 # --- THEME COLORS ---
 PRIMARY_COLOR = "#1A237E" # Deep Blue
@@ -401,6 +408,9 @@ class HornERP:
 
             # --- HANDLERS ---
             def run_report_wrapper(e):
+                if not generate_business_report:
+                    self.show_snack("❌ PDF Module not available", "red")
+                    return
                 try:
                      # Pass current period to PDF generator
                      filename = generate_business_report(shop_name, period) 
@@ -2011,6 +2021,10 @@ class HornERP:
                 self.show_snack("Select a product first!", "red")
                 return
             
+            if not generate_barcode_sheet:
+                self.show_snack("❌ PDF Module not available", "red")
+                return
+
             self.show_snack("Generating PDF...", "blue")
             try:
                 fname = generate_barcode_sheet(selected_item["barcode"], selected_item["name"], selected_item["price"], int(qty_slider.value))
@@ -2076,4 +2090,6 @@ def main(page: ft.Page):
     app = HornERP(page)
 
 if __name__ == "__main__":
-    ft.app(target=main)
+    # Render provides PORT environment variable
+    port = int(os.environ.get("PORT", 8550))
+    ft.app(target=main, view=ft.WEB_BROWSER, port=port, host="0.0.0.0")
