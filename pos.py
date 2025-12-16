@@ -740,8 +740,27 @@ class HornERP:
                 )
                 self.page.update()
             
-            # Grid: 5 columns = wider cards. Ratio 0.85 = taller cards
-            products_grid = ft.GridView(expand=True, runs_count=5, child_aspect_ratio=0.85, spacing=10, run_spacing=10)
+            # Responsive Grid
+            def get_grid_runs(width):
+                if width < 500: return 2
+                if width < 900: return 3
+                if width < 1200: return 4
+                return 5
+
+            products_grid = ft.GridView(
+                expand=True, 
+                runs_count=get_grid_runs(self.page.width), 
+                child_aspect_ratio=0.85, 
+                spacing=10, 
+                run_spacing=10
+            )
+            
+            def on_resize(e):
+                products_grid.runs_count = get_grid_runs(self.page.width)
+                products_grid.update()
+                
+            self.page.on_resize = on_resize
+
             cart_list = ft.Column(scroll="auto", expand=True, spacing=5)
             
             # Totals
