@@ -10,7 +10,9 @@ try:
 except ImportError:
     HAS_POSTGRES = False
 
-DATABASE_URL = os.environ.get("DATABASE_URL") or os.environ.get("RENDER")
+# Strict check for Database URL. on Render, this is typically provided if you link a DB.
+# If NOT provided, we fall back to SQLite (Note: SQLite on Render is ephemeral/resets on deploy).
+DATABASE_URL = os.environ.get("DATABASE_URL")
 
 class SafeCursor:
     def __init__(self, cursor, db_type):
