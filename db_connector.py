@@ -14,6 +14,16 @@ except ImportError:
 # If NOT provided, we fall back to SQLite (Note: SQLite on Render is ephemeral/resets on deploy).
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
+# Check for local config override
+if not DATABASE_URL:
+    config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "db_config.txt")
+    if os.path.exists(config_path):
+        with open(config_path, "r") as f:
+            content = f.read().strip()
+            if content.startswith("postgres"):
+                DATABASE_URL = content
+                print(f"[INFO] Loaded Cloud Database URL from {config_path}")
+
 class SafeCursor:
     def __init__(self, cursor, db_type):
         self.cursor = cursor
