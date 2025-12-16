@@ -12,7 +12,13 @@ try:
 except ImportError:
     receipt_printer = None
     print("Receipt Printer module missing or failed to load.")
-from db_connector import DBHandler, get_pak_time
+try:
+    from db_connector import DBHandler, get_pak_time
+except ImportError:
+    print("\n\nCRITICAL ERROR: 'db_connector.py' is missing!")
+    print("You have split the database logic into a new file named 'db_connector.py'.")
+    print("Please ensure you UPLOAD 'db_connector.py' to Render alongside 'pos.py'.\n\n")
+    raise
 
 # New Import
 try:
@@ -81,24 +87,31 @@ class HornERP:
                 f"CREATE TABLE IF NOT EXISTS suppliers (id {auto_id}, name TEXT, phone TEXT, address TEXT)"
             ]
             for t in tables: cursor.execute(t)
+            conn.commit() # Commit schema creation first
             
-            # Defaults
+            # Defaults - Robust Check
             cursor.execute("SELECT count(*) FROM users")
-            if cursor.fetchone()[0] == 0:
+            user_count = cursor.fetchone()[0]
+            print(f"DEBUG: Found {user_count} users in DB.")
+            
+            if user_count == 0:
+                print("DEBUG: Seeding Default Users...")
                 cursor.execute("INSERT INTO users (username, pin, role) VALUES ('Admin', '9999', 'Manager')")
                 cursor.execute("INSERT INTO users (username, pin, role) VALUES ('Cashier 1', '1234', 'Cashier')")
+                conn.commit() # Commit seeds immediately
             
             cursor.execute("SELECT count(*) FROM shop_settings")
             if cursor.fetchone()[0] == 0:
                 defaults = [('shop_name', 'HORN ERP'), ('address', 'Mogadishu'), ('phone', '615000000'), ('currency', '$')]
                 for k, v in defaults: cursor.execute("INSERT INTO shop_settings VALUES (?, ?)", (k, v))
+                conn.commit()
 
             cursor.execute("SELECT count(*) FROM products")
             if cursor.fetchone()[0] == 0:
                 cursor.execute("INSERT INTO products VALUES ('111', 'Test Rice', 1.50, 100)")
                 cursor.execute("INSERT INTO products VALUES ('222', 'Test Sugar', 0.90, 50)")
+                conn.commit() # Commit seeds
 
-            conn.commit()
             conn.close()
         except Exception as e:
             print(f"DB Error: {e}")
@@ -266,6 +279,30 @@ class HornERP:
                 else:
                     self.show_pos()
             else:
+                # --- FAILSAFE FOR RENDER/CLOUD ---
+                # If database failed to seed, but user enters master pin '9999',
+                # auto-create Admin and log in.
+                if pin.value == "9999":
+                    print("⚠️ Failsafe: Creating Admin user on fly.")
+                    try:
+                        conn = DBHandler.get_connection()
+                        cursor = conn.cursor()
+                        # Double check to avoid duplicates if query just failed mysteriously
+                        cursor.execute("SELECT * FROM users WHERE pin='9999'")
+                        if not cursor.fetchone():
+                            cursor.execute("INSERT INTO users (username, pin, role) VALUES ('Admin', '9999', 'Manager')")
+                            conn.commit()
+                        conn.close()
+                        
+                        # Set session manually
+                        self.user["name"] = "Admin"
+                        self.user["role"] = "Manager"
+                        self.show_dashboard()
+                        self.show_snack("✅ Recovery Mode: Admin Created & Logged In")
+                        return
+                    except Exception as rec_ex:
+                        print(f"Recovery Failed: {rec_ex}")
+
                 error_txt.value = "❌ Invalid PIN"
                 self.page.update()
 
@@ -2099,4 +2136,8 @@ def main(page: ft.Page):
 if __name__ == "__main__":
     # Render provides PORT environment variable
     port = int(os.environ.get("PORT", 8550))
-    ft.app(target=main, view=ft.WEB_BROWSER, port=port, host="0.0.0.0")
+    print(f"\n🚀 STARTING HORN ERP...")
+    print(f"🌍 Local Access: http://127.0.0.1:{port}")
+    print(f"☁️  Render Port: {port} (Listening on 0.0.0.0)\n")
+    
+    ft.app(target=main, view=ft.WEB_BROWSER, port=port, host="0.0.0.0", assets_dir="assets")
