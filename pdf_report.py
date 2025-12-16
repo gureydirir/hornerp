@@ -58,14 +58,27 @@ def generate_business_report(shop_name, period="Daily"):
             filter_clause = f"{date_col_cast} LIKE '{today_str}%'"
             period_label = f"Daily Report ({today_str})"
 
-        # 1. Stats (Revenue for Period)
+        # Define p_filter immediately for JOINs
+        p_filter = filter_clause.replace('date_created', 's.date_created').replace('CAST(s.date_created AS TEXT)', f"CAST(s.date_created AS TEXT)")
+
+        # 1. Stats (Revenue for Period - NET)
         cursor.execute(f"SELECT SUM(total_amount) FROM offline_sales WHERE {filter_clause}")
         res = cursor.fetchone()
         revenue_amt = res[0] if res and res[0] else 0.0
         
+        # 1b. Gross Sales (Sum of Items)
+        cursor.execute(f"""
+            SELECT SUM(i.quantity * i.price) 
+            FROM offline_sale_items i
+            JOIN offline_sales s ON i.sale_id = s.id
+            WHERE {p_filter}
+        """)
+        res_gross = cursor.fetchone()
+        gross_amt = res_gross[0] if res_gross and res_gross[0] else 0.0
+        
+        discounts = gross_amt - revenue_amt
+
         # 2. Daily Revenue Trend (Last 7 Days - Static Context)
-        # Note: Postgres GROUP BY needs modification if simple date() not working
-        # But for now assuming date() func exists or works (SQLite yes, Postgres yes)
         try:
              cursor.execute(f"""
                 SELECT date(date_created) as d, SUM(total_amount) 
@@ -78,16 +91,10 @@ def generate_business_report(shop_name, period="Daily"):
              cursor.execute("""
                 SELECT date_created, total_amount FROM offline_sales ORDER BY id DESC LIMIT 50
              """)
-             # Fake aggregation in python if SQL fails
              
         trend_data = cursor.fetchall()
-        # Normalizing trend data if it was raw
-        # (Skipping complex normalization for brevity, assuming works)
 
         # 3. Top Products (For Period)
-        # Fix filter clause replacement for join alias
-        p_filter = filter_clause.replace('date_created', 's.date_created').replace('CAST(s.date_created AS TEXT)', f"CAST(s.date_created AS TEXT)")
-
         cursor.execute(f"""
             SELECT i.product_name, SUM(i.quantity) as qty 
             FROM offline_sale_items i
@@ -143,16 +150,27 @@ def generate_business_report(shop_name, period="Daily"):
         pdf.set_font('Arial', 'B', 16)
         pdf.cell(0, 10, period_label, 0, 1, 'L')
         
-        # Revenue Box
+        # Revenue Box (Expanded)
         pdf.set_fill_color(240, 248, 255) # AliceBlue
         pdf.set_draw_color(26, 35, 126)
         pdf.set_line_width(0.5)
-        pdf.rect(10, pdf.get_y(), 190, 20, 'DF')
+        pdf.rect(10, pdf.get_y(), 190, 35, 'DF')
         
         pdf.set_y(pdf.get_y() + 5)
-        pdf.set_font('Arial', 'B', 14)
-        pdf.cell(190, 10, f"Total Revenue: ${revenue_amt:,.2f}", 0, 1, 'C')
-        pdf.ln(15)
+        
+        # Row 1: Net Revenue (Big)
+        pdf.set_font('Arial', 'B', 16)
+        pdf.set_text_color(0, 100, 0) # Green
+        pdf.cell(190, 10, f"Net Revenue: ${revenue_amt:,.2f}", 0, 1, 'C')
+        
+        # Row 2: Breakdown (Small)
+        pdf.set_font('Arial', '', 11)
+        pdf.set_text_color(80, 80, 80) # Grey
+        pdf.cell(190, 6, f"Gross Sales: ${gross_amt:,.2f}   |   Discounts Given: -${discounts:,.2f}", 0, 1, 'C')
+        pdf.set_font('Arial', 'I', 9)
+        pdf.cell(190, 6, "(Net Revenue = Gross Sales - Discounts)", 0, 1, 'C')
+
+        pdf.ln(10)
 
         # --- CHARTS ---
         temp_dir = tempfile.gettempdir()
