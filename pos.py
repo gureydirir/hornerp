@@ -391,14 +391,15 @@ class HornERP:
             
             # Filter Clauses
             if period == "Daily":
-                where_clause = f"date_created LIKE '{today_str}%'"
+                # CAST to TEXT for Postgres compatibility with LIKE
+                where_clause = f"CAST(date_created AS TEXT) LIKE '{today_str}%'"
                 chart_limit = 7 # Just show last 7 days context anyway
             elif period == "Weekly":
                 # Last 7 Days
                 start_date = (now - datetime.timedelta(days=7)).strftime("%Y-%m-%d")
                 where_clause = f"date(date_created) >= '{start_date}'"
             elif period == "Monthly":
-                where_clause = f"date_created LIKE '{month_str}%'"
+                where_clause = f"CAST(date_created AS TEXT) LIKE '{month_str}%'"
             
             # --- DATA FETCHING ---
             
@@ -1011,7 +1012,7 @@ class HornERP:
                     self.customer = {"id": 0, "name": "Walk-in", "points": 0}
 
                 try:
-                    conn = sqlite3.connect("horn.db", timeout=5)
+                    conn = DBHandler.get_connection()
                     cursor = conn.cursor()
                     
                     # 2. Calculate Totals
@@ -1021,9 +1022,13 @@ class HornERP:
                     date_str = pkt_now.strftime("%Y-%m-%d %H:%M:%S")
 
                     # 3. Insert Sale
-                    cursor.execute("INSERT INTO offline_sales (total_amount, cashier_name, customer_name, date_created, is_synced) VALUES (?, ?, ?, ?, 0)", 
-                                   (total, self.user['name'], self.customer['name'], date_str))
-                    sale_id = cursor.lastrowid
+                    if DBHandler.HAS_POSTGRES:
+                        # Postgres requires RETURNING id handling which simpleexecute might not expose easily without SafeCursor helper
+                        sale_id = DBHandler.execute_and_get_id(cursor, "INSERT INTO offline_sales (total_amount, cashier_name, customer_name, date_created, is_synced) VALUES (?, ?, ?, ?, 0)", (total, self.user['name'], self.customer['name'], date_str))
+                    else:
+                        cursor.execute("INSERT INTO offline_sales (total_amount, cashier_name, customer_name, date_created, is_synced) VALUES (?, ?, ?, ?, 0)", 
+                                    (total, self.user['name'], self.customer['name'], date_str))
+                        sale_id = cursor.lastrowid
                     
                     # 4. Insert Items & Update Stock
                     receipt_items = []
@@ -1357,7 +1362,7 @@ class HornERP:
                 errors = 0
                 
                 try:
-                    conn = sqlite3.connect("horn.db", timeout=30)
+                    conn = DBHandler.get_connection()
                     cursor = conn.cursor()
                     
                     rows_to_process = []
@@ -1457,14 +1462,14 @@ class HornERP:
             # Ensure schema is ready (Migration)
             def ensure_schema():
                 try:
-                    conn = sqlite3.connect("horn.db", timeout=5)
+                    conn = DBHandler.get_connection()
                     cursor = conn.cursor()
-                    conn.execute("ALTER TABLE products ADD COLUMN expiry_date TEXT") # Try add
-                except: pass
-                
-                try:
-                    conn = sqlite3.connect("horn.db", timeout=5)
-                    conn.execute("ALTER TABLE products ADD COLUMN category TEXT DEFAULT 'General'") # Try add category
+                    # Only try ALTER if it's sqlite, or handle Postgres carefully.
+                    # For simplicity, we just try/except.
+                    try: cursor.execute("ALTER TABLE products ADD COLUMN expiry_date TEXT")
+                    except: pass
+                    try: cursor.execute("ALTER TABLE products ADD COLUMN category TEXT DEFAULT 'General'")
+                    except: pass
                     conn.commit()
                     conn.close()
                 except: pass
@@ -1555,7 +1560,7 @@ class HornERP:
                         self.show_snack("Price must be a number, Stock must be an integer", "red")
                         return
 
-                    conn = sqlite3.connect("horn.db", timeout=30)
+                    conn = DBHandler.get_connection()
                     cursor = conn.cursor()
                     
                     if edit_mode["active"]:
@@ -1590,7 +1595,7 @@ class HornERP:
 
             def delete_product(barcode):
                 try:
-                    conn = sqlite3.connect("horn.db", timeout=30)
+                    conn = DBHandler.get_connection()
                     cursor = conn.cursor()
                     cursor.execute("DELETE FROM products WHERE barcode=?", (barcode,))
                     conn.commit()
@@ -1790,9 +1795,10 @@ class HornERP:
             try:
                 s = float(salary_val)
                 c = float(comm_val)
-                conn = sqlite3.connect("horn.db", timeout=5)
+                conn = DBHandler.get_connection()
                 # Ensure columns exist (migration check logic used below)
-                conn.execute("UPDATE users SET base_salary=?, commission_rate=? WHERE id=?", (s, c, uid))
+                cursor = conn.cursor()
+                cursor.execute("UPDATE users SET base_salary=?, commission_rate=? WHERE id=?", (s, c, uid))
                 conn.commit()
                 conn.close()
                 self.show_snack("✅ Saved HR Settings")
@@ -1803,8 +1809,8 @@ class HornERP:
         def load_payroll():
             payroll_table.rows.clear()
             
-            conn = sqlite3.connect("horn.db", timeout=30)
-            conn.row_factory = sqlite3.Row
+            conn = DBHandler.get_connection()
+            # conn.row_factory = sqlite3.Row -> Not supported by psycopg2 easily, use dictionary cursor logic or simple index
             cursor = conn.cursor()
             cursor.execute("SELECT id, username, role, base_salary, commission_rate FROM users")
             users = cursor.fetchall()
@@ -1814,16 +1820,19 @@ class HornERP:
             month_str = now_pak.strftime("%Y-%m")
             
             for u in users:
-                if u["username"] == "Admin": continue
+                if u[1] == "Admin": continue
                 
                 # Sales for this user this month
-                cursor.execute(f"SELECT SUM(total_amount) FROM offline_sales WHERE cashier_name=? AND date_created LIKE '{month_str}%'", (u["username"],))
+                # Fix: Use tuple index u[1] for username
+                # Fix: CAST date_created for Postgres
+                cursor.execute(f"SELECT SUM(total_amount) FROM offline_sales WHERE cashier_name=? AND CAST(date_created AS TEXT) LIKE '{month_str}%'", (u[1],))
                 res = cursor.fetchone()
                 total_sales = res[0] if res and res[0] else 0.0
                 
                 # Stats
-                base = u["base_salary"] if u["base_salary"] else 0.0
-                rate = u["commission_rate"] if u["commission_rate"] else 0.0
+                # Users tuple: id (0), username (1), role (2), base_salary (3), commission_rate (4)
+                base = u[3] if u[3] else 0.0
+                rate = u[4] if u[4] else 0.0
                 
                 commission_amt = total_sales * (rate / 100)
                 total_pay = base + commission_amt
@@ -1837,7 +1846,7 @@ class HornERP:
                     icon="save", 
                     icon_color="green", 
                     tooltip="Save Settings",
-                    on_click=lambda e, uid=u["id"], sf=sal_field, cf=comm_field: save_payroll_settings(uid, sf.value, cf.value)
+                    on_click=lambda e, uid=u[0], sf=sal_field, cf=comm_field: save_payroll_settings(uid, sf.value, cf.value)
                 )
 
                 payroll_table.rows.append(
@@ -1910,9 +1919,10 @@ class HornERP:
                 self.show_snack("Fill all fields", "red")
                 return
             try:
-                conn = sqlite3.connect("horn.db", timeout=30)
+                conn = DBHandler.get_connection()
+                cursor = conn.cursor()
                 # Init with 0 salary
-                conn.execute("INSERT INTO users (username, pin, role, base_salary, commission_rate) VALUES (?, ?, ?, 0, 0)", 
+                cursor.execute("INSERT INTO users (username, pin, role, base_salary, commission_rate) VALUES (?, ?, ?, 0, 0)", 
                                (username_tf.value, pin_tf.value, role_dd.value))
                 conn.commit()
                 conn.close()
@@ -1924,8 +1934,9 @@ class HornERP:
 
         def delete_staff(user_id):
             try:
-                conn = sqlite3.connect("horn.db", timeout=30)
-                conn.execute("DELETE FROM users WHERE id=?", (user_id,))
+                conn = DBHandler.get_connection()
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM users WHERE id=?", (user_id,))
                 conn.commit()
                 conn.close()
                 load_staff()
@@ -1937,9 +1948,13 @@ class HornERP:
         
         # 1. Ensure Columns Exist (Migration)
         try:
-            conn = sqlite3.connect("horn.db")
-            conn.execute("ALTER TABLE users ADD COLUMN base_salary REAL DEFAULT 0")
-            conn.execute("ALTER TABLE users ADD COLUMN commission_rate REAL DEFAULT 0")
+            conn = DBHandler.get_connection()
+            cursor = conn.cursor()
+            # Try add columns individually
+            try: cursor.execute("ALTER TABLE users ADD COLUMN base_salary REAL DEFAULT 0") 
+            except: pass
+            try: cursor.execute("ALTER TABLE users ADD COLUMN commission_rate REAL DEFAULT 0")
+            except: pass
             conn.commit()
             conn.close()
         except: pass
