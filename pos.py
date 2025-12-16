@@ -5,6 +5,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 import flet as ft
 import shutil
+import sqlite3
 import datetime
 import random # For chart mock data if db is empty
 try:
@@ -1101,7 +1102,7 @@ class HornERP:
             selected_category = {"name": "All"}
 
             def render_products(search_term=""):
-                conn = sqlite3.connect("horn.db", timeout=30)
+                conn = DBHandler.get_connection()
                 cursor = conn.cursor()
                 cursor.execute("SELECT * FROM products")
                 rows = cursor.fetchall()
@@ -1201,7 +1202,7 @@ class HornERP:
             # Build Categories
             # We need to fetch meaningful categories from DB
             def build_categories():
-                conn = sqlite3.connect("horn.db", timeout=30)
+                conn = DBHandler.get_connection()
                 cur = conn.cursor()
                 try:
                     cur.execute("SELECT DISTINCT category FROM products")
@@ -1480,7 +1481,7 @@ class HornERP:
             def load_products():
                 products_table.rows.clear()
                 try:
-                    conn = sqlite3.connect("horn.db", timeout=30)
+                    conn = DBHandler.get_connection()
                     cursor = conn.cursor()
                     
                     cursor.execute("SELECT * FROM products ORDER BY rowid DESC")
@@ -1722,7 +1723,7 @@ class HornERP:
                     self.show_snack(f"Error (duplicate phone?): {ex}", "red")
 
             def delete_client(uid):
-                conn = sqlite3.connect("horn.db", timeout=30)
+                conn = DBHandler.get_connection()
                 cursor = conn.cursor()
                 cursor.execute("DELETE FROM customers WHERE id=?", (uid,))
                 conn.commit()
@@ -1865,7 +1866,7 @@ class HornERP:
 
         def load_staff():
             staff_list.controls.clear()
-            conn = sqlite3.connect("horn.db", timeout=30)
+            conn = DBHandler.get_connection()
             cursor = conn.cursor()
             cursor.execute("SELECT id, username, role FROM users")
             rows = cursor.fetchall()
@@ -1892,7 +1893,7 @@ class HornERP:
 
         def load_attendance():
             attendance_list.controls.clear()
-            conn = sqlite3.connect("horn.db", timeout=30)
+            conn = DBHandler.get_connection()
             cursor = conn.cursor()
             try:
                 cursor.execute("SELECT user_name, action, timestamp FROM attendance ORDER BY id DESC LIMIT 50")
@@ -2067,9 +2068,14 @@ class HornERP:
                 self.page.update()
                 return
             
-            conn = sqlite3.connect("horn.db", timeout=30)
+            conn = DBHandler.get_connection()
             cursor = conn.cursor()
-            cursor.execute("SELECT barcode, name, price FROM products WHERE name LIKE ? OR barcode LIKE ? LIMIT 10", (f"%{term}%", f"%{term}%"))
+            # Postgres LIKE is case sensitive, use ILIKE? or just lower() wrapper.
+            # For compatibility:
+            if DBHandler.HAS_POSTGRES:
+                 cursor.execute("SELECT barcode, name, price FROM products WHERE LOWER(name) LIKE ? OR CAST(barcode AS TEXT) LIKE ? LIMIT 10", (f"%{term}%", f"%{term}%"))
+            else:
+                 cursor.execute("SELECT barcode, name, price FROM products WHERE name LIKE ? OR barcode LIKE ? LIMIT 10", (f"%{term}%", f"%{term}%"))
             rows = cursor.fetchall()
             conn.close()
             
