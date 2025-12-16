@@ -7,12 +7,13 @@ except ImportError:
     DBHandler = None
     import sqlite3
 
-def export_to_excel(period="Daily"):
+def export_to_excel(period="Daily", is_native=False):
     """
     Exports data to a real Excel file with multiple sheets if openpyxl is available.
     Otherwise falls back to a basic HTML-Excel dump or CSV.
     Uses DBHandler to ensure data comes from the active database (SQLite or Postgres).
-    Saves to 'assets/reports' for Web access.
+    Args:
+        is_native (bool): If True, saves to Desktop (Local App). If False, saves to assets/reports (Web App).
     """
     # Try importing openpyxl
     try:
@@ -22,13 +23,18 @@ def export_to_excel(period="Daily"):
     except ImportError:
         HAS_OPENPYXL = False
 
-    # Define Output Path (Web Friendly)
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    reports_dir = os.path.join(base_dir, "assets", "reports")
-    if not os.path.exists(reports_dir):
-        os.makedirs(reports_dir)
-        
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    if is_native:
+        # Native Mode
+        reports_dir = os.path.join(os.environ['USERPROFILE'], 'Desktop')
+        if not os.path.exists(reports_dir): os.makedirs(reports_dir) # Just in case
+    else:
+        # Web Mode
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        reports_dir = os.path.join(base_dir, "assets", "reports")
+        if not os.path.exists(reports_dir):
+            os.makedirs(reports_dir)
     
     # Connect
     if DBHandler:
@@ -205,5 +211,5 @@ def export_to_excel(period="Daily"):
             f.write(html_content)
 
     print(f"Generated Excel: {filepath}")
-    return filename # Return filename only, caller handles path construction
+    return filepath if is_native else filename
 
