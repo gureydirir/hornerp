@@ -2136,8 +2136,8 @@ def main(page: ft.Page):
 if __name__ == "__main__":
     # Render provides PORT environment variable
     port = int(os.environ.get("PORT", 8550))
-    print(f"\n🚀 STARTING HORN ERP...")
-    print(f"🌍 Local Access: http://127.0.0.1:{port}")
-    print(f"☁️  Render Port: {port} (Listening on 0.0.0.0)\n")
+    print(f"\n[STARTING] HORN ERP...")
+    print(f"[LOCAL] Access: http://127.0.0.1:{port}")
+    print(f"[CLOUD] Render Port: {port} (Listening on 0.0.0.0)\n")
     
     ft.app(target=main, view=ft.WEB_BROWSER, port=port, host="0.0.0.0", assets_dir="assets")
