@@ -67,10 +67,13 @@ class SafeConnection:
         return c
 
 class DBHandler:
+    # Flag to indicate if we are truly using Postgres (Env Var + Lib)
+    HAS_POSTGRES = bool(DATABASE_URL and HAS_POSTGRES)
+
     @staticmethod
     def get_connection():
         """Returns a database connection (SQLite or Postgres) wrapped in SafeConnection."""
-        if DATABASE_URL and HAS_POSTGRES:
+        if DBHandler.HAS_POSTGRES:
             # Postgres (Cloud / Render)
             try:
                 conn = psycopg2.connect(DATABASE_URL, sslmode='require')
@@ -86,16 +89,29 @@ class DBHandler:
     @staticmethod
     def get_placeholder():
         """Returns '?' for SQLite or '%s' for Postgres."""
-        if DATABASE_URL and HAS_POSTGRES:
+        if DBHandler.HAS_POSTGRES:
             return "%s"
         return "?"
     
     @staticmethod
     def get_auto_id_sql():
         """Returns the SQL type for Auto Increment ID."""
-        if DATABASE_URL and HAS_POSTGRES:
+        if DBHandler.HAS_POSTGRES:
             return "SERIAL PRIMARY KEY"
         return "INTEGER PRIMARY KEY AUTOINCREMENT"
+
+    @staticmethod
+    def execute_and_get_id(cursor, sql, params):
+        """Executes INSERT and returns the new ID (Auto-detects DB type)."""
+        if DBHandler.HAS_POSTGRES:
+             # Postgres: Append RETURNING id
+             sql += " RETURNING id"
+             cursor.execute(sql, params)
+             return cursor.fetchone()[0]
+        else:
+             # SQLite: Standard execute + lastrowid
+             cursor.execute(sql, params)
+             return cursor.lastrowid
 
 def get_pak_time():
     # Helper for timezone (used across app)
