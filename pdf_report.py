@@ -12,24 +12,30 @@ except ImportError:
 
 from db_connector import DBHandler
 
-def generate_business_report(shop_name, period="Daily"):
+def generate_business_report(shop_name, period="Daily", is_native=False):
     """
     Generates a printable PDF report.
-    Saves to 'assets/reports' for Web access.
+    Args:
+        is_native (bool): If True, saves to Desktop (Local App). If False, saves to assets/reports (Web App).
     """
     if not FPDF:
         return "Error: FPDF library not found. Please install headers."
 
     try:
-        # Define Output Path (Web Friendly)
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        reports_dir = os.path.join(base_dir, "assets", "reports")
-        if not os.path.exists(reports_dir):
-            os.makedirs(reports_dir)
-
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"HornERP_Analysis_{timestamp}.pdf"
-        filepath = os.path.join(reports_dir, filename)
+
+        if is_native:
+            # Native Mode: Save to Desktop
+            desktop = os.path.join(os.environ['USERPROFILE'], 'Desktop')
+            filepath = os.path.join(desktop, filename)
+        else:
+            # Web Mode: Save to assets/reports
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            reports_dir = os.path.join(base_dir, "assets", "reports")
+            if not os.path.exists(reports_dir):
+                os.makedirs(reports_dir)
+            filepath = os.path.join(reports_dir, filename)
         
         conn = DBHandler.get_connection()
         cursor = conn.cursor()
