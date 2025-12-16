@@ -131,7 +131,10 @@ class HornERP:
         try:
             conn = DBHandler.get_connection()
             cursor = conn.cursor()
-            cursor.execute("INSERT OR REPLACE INTO shop_settings (key, value) VALUES (?, ?)", (key, value))
+            if DBHandler.HAS_POSTGRES:
+                cursor.execute("INSERT INTO shop_settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value", (key, value))
+            else:
+                cursor.execute("INSERT OR REPLACE INTO shop_settings (key, value) VALUES (?, ?)", (key, value))
             conn.commit()
             conn.close()
             return True
@@ -1507,7 +1510,7 @@ class HornERP:
                     conn = DBHandler.get_connection()
                     cursor = conn.cursor()
                     
-                    cursor.execute("SELECT * FROM products ORDER BY rowid DESC")
+                    cursor.execute("SELECT * FROM products ORDER BY barcode DESC")
                     rows = cursor.fetchall()
                     conn.close()
                     
