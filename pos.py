@@ -262,10 +262,22 @@ class HornERP:
 
         def login_action(e):
             conn = DBHandler.get_connection()
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM users WHERE pin = ?", (pin.value,))
-            user_rec = cursor.fetchone()
-            conn.close()
+            if not conn:
+                error_txt.value = "❌ DB Connection Failed!"
+                print("Error: Could not connect to database in login_action")
+                self.page.update()
+                return
+
+            try:
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM users WHERE pin = ?", (pin.value,))
+                user_rec = cursor.fetchone()
+                conn.close()
+            except Exception as e:
+                print(f"Login Query Error: {e}")
+                error_txt.value = "❌ Database Query Error"
+                self.page.update()
+                return
             
             if user_rec:
                 self.user["id"] = user_rec[0]
