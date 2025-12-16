@@ -1,5 +1,9 @@
-import flet as ft
+import sys
 import os
+# Ensure current directory is in python path for Render
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+import flet as ft
 import shutil
 import datetime
 import random # For chart mock data if db is empty
