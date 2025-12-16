@@ -16,6 +16,12 @@ def print_receipt(data):
     currency = data.get('currency', '$')
     customer_name = data.get('customer', 'Walk-in')
     
+    # Define Output Path (Web Friendly)
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    reports_dir = os.path.join(base_dir, "assets", "reports")
+    if not os.path.exists(reports_dir):
+        os.makedirs(reports_dir)
+
     # If FPDF is missing, fall back to console print simulation
     if not FPDF:
         print("Error: FPDF not installed. Cannot generate receipt PDF.")
@@ -60,10 +66,10 @@ def print_receipt(data):
     
     # Items
     for item in items:
-        name = str(item['name'])[:18] # Truncate for small width
-        qty = str(item['qty'])
+        name = str(item.get('name', 'Unknown'))[:18] # Truncate for small width
+        qty = str(item.get('qty', 1))
         # item['total'] is already calculated in pos.py, or calc here
-        line_total = item.get('total', float(item['price']) * item['qty'])
+        line_total = item.get('total', float(item.get('price', 0)) * int(item.get('qty', 1)))
         price_display = f"{currency}{line_total:.2f}"
         
         pdf.cell(35, 5, name, 0, 0)
@@ -103,15 +109,9 @@ def print_receipt(data):
     # Save logic
     file_timestamp = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5))).strftime("%Y%m%d_%H%M%S")
     filename = f"receipt_{sale_id}_{file_timestamp}.pdf"
-    
-    try:
-        user_profile = os.environ.get('USERPROFILE') or os.path.expanduser("~")
-        desktop_path = os.path.join(user_profile, "Desktop")
-        if not os.path.exists(desktop_path): os.makedirs(desktop_path)
-        filepath = os.path.join(desktop_path, filename)
-    except:
-        filepath = filename
+    filepath = os.path.join(reports_dir, filename)
 
     print(f"Generating PDF Receipt: {filepath}")
     pdf.output(filepath)
-    return filepath
+    return filename # Return filename for web view
+
