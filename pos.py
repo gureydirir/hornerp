@@ -473,24 +473,38 @@ class HornERP:
                     self.show_snack("❌ PDF Module not available", "red")
                     return
                 try:
+                     is_native = not self.page.web
                      # Pass current period to PDF generator
-                     filename = generate_business_report(shop_name, period) 
-                     if filename.startswith("Error"): 
-                         self.show_snack(f"❌ {filename}", color="red")
+                     result = generate_business_report(shop_name, period, is_native=is_native) 
+                     if result.startswith("Error"): 
+                         self.show_snack(f"❌ {result}", color="red")
                      else: 
-                         # Launch relative URL
-                         self.page.launch_url(f"/reports/{filename}")
-                         self.show_snack(f"✅ Report Generated: {filename}")
-                except Exception as ex: self.show_snack(f"❌ Error: {ex}", color="red")
+                         if is_native:
+                             import webbrowser
+                             webbrowser.open(result) # Open local file
+                             self.show_snack(f"✅ Report Saved to Desktop: {os.path.basename(result)}")
+                         else:
+                             # Launch relative URL
+                             self.page.launch_url(f"/reports/{result}")
+                             self.show_snack(f"✅ Report Generated")
+                except Exception as ex: 
+                    self.show_snack(f"❌ Error: {ex}", color="red")
+                    print(ex)
 
             def run_excel_wrapper(e):
                 if not export_to_excel: self.show_snack(f"❌ Excel Error: module missing", color="red"); return
                 try:
-                    filename = export_to_excel(period)
-                    if not filename: self.show_snack(f"❌ Error: No file", "red")
+                    is_native = not self.page.web
+                    result = export_to_excel(period, is_native=is_native)
+                    if not result: self.show_snack(f"❌ Error: No file", "red")
                     else: 
-                        self.page.launch_url(f"/reports/{filename}")
-                        self.show_snack(f"✅ Excel Exported")
+                        if is_native:
+                             import webbrowser
+                             webbrowser.open(result)
+                             self.show_snack(f"✅ Excel Saved to Desktop")
+                        else:
+                             self.page.launch_url(f"/reports/{result}")
+                             self.show_snack(f"✅ Excel Exported")
                 except Exception as ex: self.show_snack(f"❌ Error: {ex}", color="red")
             
             def backup_db(e):
@@ -916,8 +930,16 @@ class HornERP:
 
             def reprint_last(e):
                 if hasattr(self, 'last_receipt_data') and self.last_receipt_data:
-                    filename = receipt_printer.print_receipt(self.last_receipt_data)
-                    if filename: self.page.launch_url(f"/reports/{filename}")
+                    is_native = not self.page.web
+                    result = receipt_printer.print_receipt(self.last_receipt_data, is_native=is_native)
+                    
+                    if result:
+                        if is_native:
+                            import webbrowser
+                            webbrowser.open(result)
+                        else:
+                            self.page.launch_url(f"/reports/{result}")
+                            
                     self.show_snack("Reprinting last receipt...", "blue")
                 else:
                     self.show_snack("No receipt found to reprint", "orange")
@@ -1097,10 +1119,17 @@ class HornERP:
                     }
                     
                     try:
-                        # Modified to handle Web Print (Launch URL)
-                        filename = receipt_printer.print_receipt(receipt_data)
-                        if filename:
-                            self.page.launch_url(f"/reports/{filename}")
+                        # Modified to handle Web Print vs Native
+                        is_native = not self.page.web
+                        result = receipt_printer.print_receipt(receipt_data, is_native=is_native)
+                        
+                        if result:
+                            if is_native:
+                                import webbrowser
+                                webbrowser.open(result)
+                            else:
+                                self.page.launch_url(f"/reports/{result}")
+                                
                     except Exception as print_err:
                         print(f"Printing Error (Ignored): {print_err}")
                         self.show_snack(f"⚠️ Sale Saved, but Print Failed: {print_err}", "orange")
